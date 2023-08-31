@@ -1,0 +1,126 @@
+---
+title: "绩点自动计算"
+author: "StudyingLover"
+date: "2023-08-30"
+categories: [code, analysis]
+image: "https://cdn.studyinglover.com/pic/2023/08/10f885319b150cc20093124185e25c3b.png"
+---
+
+又到了一年一度的绩点计算时期，在传统的计算过程中，我们受限于班长，团支书或者其他人极其有限的手算能力而很难快速计算，所以为什么不能有一个自动计算的脚本呢？
+
+这个问题和大部分的数据科学竞赛数据处理部分是基本相同的，大概就是根据规则处理数据，然后计算得分，最后按照得分排序。
+
+::: {.callout-note} 
+这里的数据全部是随机生成的假数据
+:::
+
+首先把表读进来然后看一下格式，这里用pandas读取excel文件，然后把列名改成Name, Score, Weight。
+```{python}
+import pandas as pd
+import numpy as np
+# 读取xlsx文件
+df = pd.read_excel('score.xlsx', header=None)
+df.columns = ['Name', 'Score', 'Wight']
+df['Name'] = pd.factorize(df['Name'])[0]
+df
+```
+
+第一列是姓名，第二行是得分，第三行是学分
+
+这里简单介绍一下绩点的算法，假设一个人上了4门课，分别是A,B,C,D，分数分别是a,b,c,d，每门课的学分是 $S_a$,$S_b$,$S_c$,$S_d$ ，那么绩点的计算公式是
+$$
+S = \frac{a*S_a}{S_a+S_b+S_c+S_d}+\frac{b*S_b}{S_a+S_b+S_c+S_d}+\frac{c*S_c}{S_a+S_b+S_c+S_d}+\frac{d*S_d}{S_a+S_b+S_c+S_d}
+$$ {#eq-black-scholes}
+
+我们先处理非数字内容，second_column 是一个 Pandas Series，表示 DataFrame 中的第二列。astype(str) 将 Series 中的所有元素转换为字符串类型，然后 str.isdigit() 方法返回一个布尔类型的 Series，表示每个元素是否为数字。~ 操作符将这个布尔类型的 Series 取反，得到一个新的布尔类型的 Series，表示每个元素是否为非数字。最后，将这个布尔类型的 Series 作为索引，从 second_column 中选择所有非数字值，得到一个新的 Pandas Series，即 non_numeric_values。
+```{python}
+# 提取第二列非数字内容
+second_column = df.iloc[:, 1]  # 获取第二列数据
+
+non_numeric_values = second_column[~second_column.astype(str).str.isdigit()]
+set(non_numeric_values)
+```
+我们可以看到这张表中只有四种非数字内容，我看了一下具体的业务内容，还有一种不及格的可能选项。我们定义一个字典，将他们转换成数字。[(思考题：为什么是`95`在这里是字符串而不是int)]{.aside}
+```{python}
+text2score = {
+    "优秀":'95',
+    "良好":'85',
+    "中等":'75',
+    "及格":'65',
+    "不及格":'50'
+}
+
+df.loc[non_numeric_values.index, second_column.name] = non_numeric_values.map(text2score)
+df
+```
+
+接下来我们需要提取出所有人的名字，`all_people`是所有人的名字
+```{python}
+all_people = []
+
+for i in range(len(second_column)):
+    all_people.append(df.iloc[i, 0])
+all_people = set(all_people)
+len(all_people), all_people
+```
+
+然后取出每个人的成绩，`all_score`是每个人的成绩，`all_weight`是对应课程的学分。`all_score`和`all_weight`的元素是学生数个列表，每个列表的长度是课程数。
+```{python}
+all_weight = []
+all_score = []
+for i in all_people:
+    # 提取df中Name列为i的所有行
+    df_i = df[df['Name']==i]
+    # 提取df_i中Score列的所有行
+    df_i_score = df_i['Score']
+    # 提取df_i中Weight列的所有行
+    df_i_weight = df_i['Wight']
+    # 求Weight列的和
+    sum_weight = df_i_weight.sum()
+    personal_weight = []
+    for j in df_i_weight:
+        personal_weight.append(j/sum_weight )
+    # print(i,personal_weight,len(personal_weight))
+    all_weight.append(personal_weight)
+    all_score.append(list(df_i_score))
+len(all_weight), len(all_score)
+```
+
+这里做一下数据类型的转换，你应该知道思考题的答案了吧？
+```{python}
+for i in all_score:
+    for j in range(len(i)):
+        i[j] = np.float64(i[j])
+```
+
+下面按照公式 @eq-black-scholes 做计算即可
+```{python}
+assert len(all_weight) == len(all_score), "len(all_weight) != len(all_score)"
+
+name = []
+final_score = []
+
+for i in range(len(all_weight)):
+    assert len(all_weight[i]) == len(all_score[i]), f"len(all_weight[{i}]) != len(all_score[{i}])"
+    weight = np.array(all_weight[i])
+    score = np.array(all_score[i])
+    # inner product
+    # print(list(all_people)[i],np.dot(weight, score))
+    name.append(list(all_people)[i])
+    final_score.append(np.dot(weight, score))
+assert len(final_score)==len(name), "len(final_score)!=len(name)"
+```
+
+最后把结果写入excel文件
+```{python}
+# 保存name和final_score到一个DataFrame中
+df_final_score = pd.DataFrame({'Name':name, 'Final Score':final_score})
+
+# 按照Final Score降序排列
+df_final_score.sort_values(by='Final Score', ascending=False, inplace=True)
+
+df_final_score.index = range(0, len(df_final_score))
+
+df_final_score.to_excel('final_score.xlsx', index=False)
+df_final_score
+```

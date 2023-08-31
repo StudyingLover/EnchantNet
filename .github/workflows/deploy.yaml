@@ -1,0 +1,30 @@
+name: Build and Deploy Quarto
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout 🛎️
+      uses: actions/checkout@main
+
+    - name: Install Pandoc
+      run: |
+        sudo apt-get install pandoc
+    
+    - name: Setup quarto
+      uses: quarto-dev/quarto-actions/setup@v2
+
+    - name: Build 🏗️
+      run: |
+        quarto render
+
+    - name: Deploy 🚀
+      uses: JamesIves/github-pages-deploy-action@3.7.1
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        BRANCH: gh-pages
+        FOLDER: _site
+        BASE_BRANCH: main

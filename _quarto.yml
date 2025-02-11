@@ -9,8 +9,6 @@ website:
     left: 
       - text: "友链"
         file: link.qmd
-      - text: "关于我"
-        file: about.qmd
       - text: "镜像站"
         menu:
           - text: "暂时还没有～"
